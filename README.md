@@ -2,45 +2,55 @@
 Crypto Wallet Transactions Tracker Bot
 </h1>
 
-This is a Telegram bot that tracks the transactions of added Ethereum (ETH) and Binance Coin (BNB) wallets and sends notifications whenever a new transaction occurs. The bot uses the Etherscan and BSCscan APIs to gather information about transactions, and CoinGecko to fetch the current prices of ETH and BNB.
+Ce bot Telegram suit les transactions des portefeuilles Ethereum (ETH) et Binance Coin (BNB) ajoutés et envoie des notifications chaque fois qu'une nouvelle transaction se produit. Le bot utilise les API Etherscan et BSCscan pour recueillir des informations sur les transactions, ainsi que CoinGecko pour obtenir les prix actuels de l'ETH et du BNB.
 
+## Commandes
 
-## Commands
+- `/start` : Affiche un message de bienvenue et des instructions sur l'utilisation du bot.
+- `/add <blockchain> <wallet_address>` : Ajoute un nouveau portefeuille à suivre. L'adresse du portefeuille doit être fournie dans le format correct (commençant par '0x' pour les portefeuilles ETH et 'bnb' pour les portefeuilles BNB), sinon le bot demandera à l'utilisateur de corriger.
+- `/remove <blockchain> <wallet_address>` : Supprime un portefeuille de la liste des portefeuilles suivis. L'utilisateur doit fournir l'adresse du portefeuille dans le format correct.
+- `/list` : Affiche la liste des portefeuilles actuellement suivis.
 
-- `/start` shows a welcome message and instructions on how to use the bot.
-- `/add` adds a new wallet to track transactions for. The wallet address must be provided in the correct format (starting with '0x' for ETH wallets and 'bnb' for BNB wallets), otherwise the bot will prompt the user to correct it. The added wallets are saved in a JSON file for persistence.
-- `/remove` removes a wallet from the list of tracked wallets. The user must provide the wallet address in the correct format.
-- `/list` shows the list of currently tracked wallets.
+## Fonctionnalités
 
-## Features
+- **Journalisation** : Le bot enregistre chaque transaction et les erreurs dans un fichier de log.
+- **Vérification de format** : Le bot vérifie que l'adresse du portefeuille fournie par l'utilisateur est dans le format correct avant de l'ajouter à la liste des portefeuilles suivis.
 
-- Logging: the bot prompts every transaction and errors.
-- Format check: the bot checks that the wallet address provided by the user is in the correct format before adding it to the list of tracked wallets.
+## Exigences
 
-## Requirements
+Pour exécuter le bot, vous devez avoir Python 3.6 ou une version ultérieure installé sur votre système, sourcez le `requirements.txt` pour installer les dépendances.
 
-To run the bot, you'll need to have Python 3.6 or later installed on your system, along with the following Python libraries:
-
-- `requests` (for making HTTP requests to the APIs)
-- `web3` (for interacting with the Ethereum blockchain)
-
-You'll also need to obtain API keys for Etherscan and BSCscan, as well as a Telegram bot token. These can be obtained by following the instructions on the respective websites.
+Vous devrez également obtenir des clés API pour Etherscan et BSCscan, ainsi qu'un token de bot Telegram. Ces éléments peuvent être obtenus en suivant les instructions sur les sites respectifs.
 
 ## Installation
 
-1. Clone this repository: `git clone (this repo)`
-2. Install the required packages: `pip install -r requirements.txt`
-3. Replace the following placeholders in the `main.py` file with your API keys and bot token:
+1. Clonez ce dépôt : `git clone <URL_DU_REPO>`
+2. Installez les packages requis : `pip install -r requirements.txt`
+3. Remplacez les espaces réservés dans le fichier `main.py` par vos clés API et le token du bot :
 
     ```python
-    ETHERSCAN_API_KEY = '<your_etherscan_api_key>'
-    BSCSCAN_API_KEY = '<your_bscscan_api_key>'
-    TELEGRAM_BOT_TOKEN = '<your_telegram_bot_token>'
-    TELEGRAM_CHAT_ID = '<your_telegram_chat_id>'
+    ETHERSCAN_API_KEY = '<votre_clé_api_etherscan>'
+    BSCSCAN_API_KEY = '<votre_clé_api_bscscan>'
+    TELEGRAM_BOT_TOKEN = '<votre_token_bot_telegram>'
+    TELEGRAM_CHAT_ID = '<votre_id_chat_telegram>'
     ```
-4. Start the bot: `python main.py`
 
-## Disclaimer
+4. Démarrez le bot : `python main.py`
 
-This bot is provided for educational purposes only and should not be used as financial advice. The bot does not have access to your wallet.
-print('yxpjuyfkjt')
+## Remarque
+
+Ce bot est fourni à des fins éducatives uniquement et ne doit pas être utilisé comme conseil financier. Le bot n'a pas accès à votre portefeuille.
+
+## Journalisation
+
+Les journaux des transactions et des erreurs sont enregistrés dans le fichier `log.log`. Assurez-vous de vérifier ce fichier pour le débogage et le suivi des activités du bot.
+
+## Fichiers de Configuration
+
+- `watched_wallets.txt` : Contient la liste des portefeuilles suivis.
+- `latest_tx_hashes.json` : Stocke les hachages des dernières transactions pour éviter les doublons.
+- `last_run_time.txt` : Enregistre le dernier temps d'exécution pour le suivi des transactions.
+
+## License
+
+Distribué sous la licence Apache 2.0. Voir `LICENSE` pour plus d'informations.
