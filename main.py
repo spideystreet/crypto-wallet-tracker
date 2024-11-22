@@ -3,14 +3,19 @@ import json
 import time
 import os.path
 import re
+import logging
 from web3 import Web3
 from fernet import Fernet
 
+# Configure logging
+logging.basicConfig(filename='log.log', level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 # Update the following variables with your own Etherscan and BscScan API keys and Telegram bot token
 ETHERSCAN_API_KEY = 'PH84WF3RJR72KMJ259WVPPXIGNDPTZ2UJS'
-BSCSCAN_API_KEY = '<your_bscscan_api_key>'
+BSCSCAN_API_KEY = 'SEXHD1MET8J3UDJBJN82FTP9FR6Y6RRUVW'
 TELEGRAM_BOT_TOKEN = '7607138331:AAGWqzxovVyamtpQRJyVW7SiUeMIxvHzXRE'
-TELEGRAM_CHAT_ID = '7331855588'
+TELEGRAM_CHAT_ID = '-4599799577'
 
 # Define some helper functions
 def get_wallet_transactions(wallet_address, blockchain):
@@ -19,16 +24,19 @@ def get_wallet_transactions(wallet_address, blockchain):
     elif blockchain == 'bnb':
         url = f'https://api.bscscan.com/api?module=account&action=txlist&address={wallet_address}&sort=desc&apikey={BSCSCAN_API_KEY}'
     else:
+        logging.error('Invalid blockchain specified')
         raise ValueError('Invalid blockchain specified')
 
+    logging.debug(f"Fetching transactions for {wallet_address} on {blockchain} using URL: {url}")
     response = requests.get(url)
     data = json.loads(response.text)
 
     result = data.get('result', [])
     if not isinstance(result, list):
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Error fetching transactions for {wallet_address} on {blockchain.upper()} blockchain: {data}")
+        logging.error(f"Error fetching transactions for {wallet_address} on {blockchain.upper()} blockchain: {data}")
         return []
 
+    logging.info(f"Found {len(result)} transactions for {wallet_address}.")
     return result
 
 def send_telegram_notification(message, value, usd_value, tx_hash, blockchain):
@@ -37,13 +45,17 @@ def send_telegram_notification(message, value, usd_value, tx_hash, blockchain):
     elif blockchain == 'bnb':
         etherscan_link = f'<a href="https://bscscan.com/tx/{tx_hash}">BscScan</a>'
     else:
+        logging.error('Invalid blockchain specified')
         raise ValueError('Invalid blockchain specified')
 
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
-    payload = {'chat_id': f'{TELEGRAM_CHAT_ID}', 'text': f'{message}: {etherscan_link}\nValue: {value:.6f} {blockchain.upper()} (${usd_value:.2f})',
-               'parse_mode': 'HTML'}
+    payload = {
+        'chat_id': f'{TELEGRAM_CHAT_ID}',
+        'text': f'{message}: {etherscan_link}\nValue: {value:.6f} {blockchain.upper()} (${usd_value:.2f})',
+        'parse_mode': 'HTML'
+    }
     response = requests.post(url, data=payload)
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Telegram notification sent with message: {message}, value: {value} {blockchain.upper()} (${usd_value:.2f})")
+    logging.info(f"Telegram notification sent with message: {message}, value: {value} {blockchain.upper()} (${usd_value:.2f})")
     return response
 
 def monitor_wallets():
@@ -86,13 +98,13 @@ def monitor_wallets():
 
                     if tx_hash not in latest_tx_hashes and tx_time > last_run_time:
                         if tx['to'].lower() == wallet_address.lower():
-                            value = float(tx['value']) / 10**18 # Convert from wei to ETH or BNB
-                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price) # Calculate value in USD
+                            value = float(tx['value']) / 10**18  # Convert from wei to ETH or BNB
+                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price)  # Calculate value in USD
                             message = f'🚨 Incoming transaction detected on {wallet_address}'
                             send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
                         elif tx['from'].lower() == wallet_address.lower():
-                            value = float(tx['value']) / 10**18 # Convert from wei to ETH or BNB
-                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price) # Calculate value in USD
+                            value = float(tx['value']) / 10**18  # Convert from wei to ETH or BNB
+                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price)  # Calculate value in USD
                             message = f'🚨 Outgoing transaction detected on {wallet_address}'
                             send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
 
@@ -110,7 +122,7 @@ def monitor_wallets():
             # Sleep for 1 minute
             time.sleep(60)
         except Exception as e:
-            print(f'An error occurred: {e}')
+            logging.error(f'An error occurred: {e}')
             # Sleep for 10 seconds before trying again
             time.sleep(10)
 
@@ -118,6 +130,7 @@ def add_wallet(wallet_address, blockchain):
     file_path = "watched_wallets.txt"
     with open(file_path, 'a') as f:
         f.write(f'{blockchain}:{wallet_address}\n')
+    logging.info(f'Added {wallet_address} to the list of watched {blockchain.upper()} wallets.')
 
 def remove_wallet(wallet_address, blockchain):
     file_path = "watched_wallets.txt"
@@ -127,6 +140,7 @@ def remove_wallet(wallet_address, blockchain):
             if line.strip() != f'{blockchain}:{wallet_address}':
                 temp_f.write(line)
     os.replace(temp_file_path, file_path)
+    logging.info(f'Removed {wallet_address} from the list of watched {blockchain.upper()} wallets.')
 
 # Define the command handlers for the Telegram bot
 def start(update, context):
@@ -148,10 +162,12 @@ Example: /list ETH or just /list
 Don't forget to star my Github repo if you find this bot useful! https://github.com/cankatx/crypto-wallet-tracker ⭐️
     """
     context.bot.send_message(chat_id=update.message.chat_id, text=message)
+    logging.info('Sent welcome message to user.')
 
 def add(update, context):
     if len(context.args) < 2:
         context.bot.send_message(chat_id=update.message.chat_id, text="Please provide a blockchain and wallet address to add.")
+        logging.warning('User did not provide enough arguments to add a wallet.')
         return
 
     blockchain = context.args[0].lower()
@@ -161,13 +177,16 @@ def add(update, context):
     if blockchain == 'eth':
         if not re.match(r'^0x[a-fA-F0-9]{40}$', wallet_address):
             context.bot.send_message(chat_id=update.message.chat_id, text=f"{wallet_address} is not a valid Ethereum wallet address.")
+            logging.warning(f"Invalid Ethereum wallet address: {wallet_address}")
             return
     elif blockchain == 'bnb':
         if not re.match(r'^0x[a-fA-F0-9]{40}$', wallet_address):
             context.bot.send_message(chat_id=update.message.chat_id, text=f"{wallet_address} is not a valid Binance Smart Chain wallet address.")
+            logging.warning(f"Invalid Binance wallet address: {wallet_address}")
             return
     else:
         context.bot.send_message(chat_id=update.message.chat_id, text=f"Invalid blockchain specified: {blockchain}")
+        logging.warning(f"Invalid blockchain specified: {blockchain}")
         return
     
     add_wallet(wallet_address, blockchain)
@@ -177,6 +196,7 @@ def add(update, context):
 def remove(update, context):
     if len(context.args) < 2:
         context.bot.send_message(chat_id=update.message.chat_id, text="Please provide a blockchain and wallet address to remove.\nUsage: /remove ETH 0x123456789abcdef")
+        logging.warning('User did not provide enough arguments to remove a wallet.')
         return
     blockchain = context.args[0].lower()
     wallet_address = context.args[1]
@@ -232,7 +252,7 @@ dispatcher.add_handler(remove_handler)
 dispatcher.add_handler(list_handler)
 
 updater.start_polling()
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Telegram bot started.")
+logging.info("Telegram bot started.")
 
-print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Monitoring wallets...")
+logging.info("Monitoring wallets...")
 monitor_wallets()
