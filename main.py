@@ -1,3 +1,4 @@
+from telegram.ext import Updater, CommandHandler
 import requests
 import json
 import time
@@ -31,12 +32,13 @@ def get_wallet_transactions(wallet_address, blockchain):
     response = requests.get(url)
     data = json.loads(response.text)
 
+    logging.info(f"Response from API: {data}")
     result = data.get('result', [])
     if not isinstance(result, list):
-        logging.error(f"Error fetching transactions for {wallet_address} on {blockchain.upper()} blockchain: {data}")
+        logging.error(f"Error fetching transactions: {data}")
         return []
 
-    logging.info(f"Found {len(result)} transactions for {wallet_address}.")
+    logging.info(f"Found {len(result)} transactions")
     return result
 
 def send_telegram_notification(message, value, usd_value, tx_hash, blockchain):
@@ -56,166 +58,147 @@ def send_telegram_notification(message, value, usd_value, tx_hash, blockchain):
     }
     response = requests.post(url, data=payload)
     logging.info(f"Telegram notification sent with message: {message}, value: {value} {blockchain.upper()} (${usd_value:.2f})")
-    return response
 
 def monitor_wallets():
-    watched_wallets = set()
-    file_path = "watched_wallets.txt"
-    if not os.path.exists(file_path):
-        open(file_path, 'w').close()
-
     latest_tx_hashes = {}
     latest_tx_hashes_path = "latest_tx_hashes.json"
     if os.path.exists(latest_tx_hashes_path):
         with open(latest_tx_hashes_path, "r") as f:
             latest_tx_hashes = json.load(f)
 
-    last_run_time = 0
-    last_run_time_path = "last_run_time.txt"
-    if os.path.exists(last_run_time_path):
-        with open(last_run_time_path, "r") as f:
-            last_run_time = int(f.read())
-
     while True:
         try:
-            # Fetch current ETH and BNB prices in USD from CoinGecko API
-            eth_usd_price_url = 'https://api.coingecko.com/api/v3/simple/price?ids=ethereum%2Cbinancecoin&vs_currencies=usd'
-            response = requests.get(eth_usd_price_url)
-            data = json.loads(response.text)
-            eth_usd_price = data['ethereum']['usd']
-            bnb_usd_price = data['binancecoin']['usd']
+            with open("watched_wallets.txt", "r") as f:
+                wallets = [line.strip().split(":") for line in f if line.strip()]
 
-            # Read from file
-            with open(file_path, 'r') as f:
-                watched_wallets = set(f.read().splitlines())
-
-            for wallet in watched_wallets:
-                blockchain, wallet_address = wallet.split(':')
+            for blockchain, wallet_address in wallets:
                 transactions = get_wallet_transactions(wallet_address, blockchain)
+                if not transactions:
+                    continue
+
                 for tx in transactions:
                     tx_hash = tx['hash']
-                    tx_time = int(tx['timeStamp'])
+                    if tx_hash not in latest_tx_hashes.get(wallet_address, []):
+                        if wallet_address not in latest_tx_hashes:
+                            latest_tx_hashes[wallet_address] = []
+                        latest_tx_hashes[wallet_address].append(tx_hash)
 
-                    if tx_hash not in latest_tx_hashes and tx_time > last_run_time:
+                        # Get the current price of ETH/BNB in USD
+                        if blockchain == 'eth':
+                            price_url = 'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd'
+                        else:
+                            price_url = 'https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd'
+                        
+                        price_response = requests.get(price_url)
+                        price_data = json.loads(price_response.text)
+                        if blockchain == 'eth':
+                            current_price = price_data['ethereum']['usd']
+                        else:
+                            current_price = price_data['binancecoin']['usd']
+
+                        # Convert value from Wei to ETH/BNB
+                        value = float(tx['value']) / 10**18
+                        usd_value = value * current_price
+
+                        # Check if it's an incoming or outgoing transaction
                         if tx['to'].lower() == wallet_address.lower():
-                            value = float(tx['value']) / 10**18  # Convert from wei to ETH or BNB
-                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price)  # Calculate value in USD
                             message = f'🚨 Incoming transaction detected on {wallet_address}'
-                            send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
-                        elif tx['from'].lower() == wallet_address.lower():
-                            value = float(tx['value']) / 10**18  # Convert from wei to ETH or BNB
-                            usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price)  # Calculate value in USD
+                        else:
                             message = f'🚨 Outgoing transaction detected on {wallet_address}'
-                            send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
 
-                        latest_tx_hashes[tx_hash] = int(tx['blockNumber'])
+                        send_telegram_notification(message, value, usd_value, tx_hash, blockchain)
 
-            # Save latest_tx_hashes to file
+            # Save the latest transaction hashes
             with open(latest_tx_hashes_path, "w") as f:
                 json.dump(latest_tx_hashes, f)
 
-            # Update last_run_time
-            last_run_time = int(time.time())
-            with open(last_run_time_path, "w") as f:
-                f.write(str(last_run_time))
-
-            # Sleep for 1 minute
-            time.sleep(60)
+            time.sleep(60)  # Wait for 60 seconds before checking again
         except Exception as e:
-            logging.error(f'An error occurred: {e}')
-            # Sleep for 10 seconds before trying again
-            time.sleep(10)
+            logging.error(f"Error in monitor_wallets: {str(e)}")
+            time.sleep(60)  # Wait for 60 seconds before retrying
 
-def add_wallet(wallet_address, blockchain):
-    file_path = "watched_wallets.txt"
-    with open(file_path, 'a') as f:
-        f.write(f'{blockchain}:{wallet_address}\n')
-    logging.info(f'Added {wallet_address} to the list of watched {blockchain.upper()} wallets.')
-
-def remove_wallet(wallet_address, blockchain):
-    file_path = "watched_wallets.txt"
-    temp_file_path = "temp.txt"
-    with open(file_path, 'r') as f, open(temp_file_path, 'w') as temp_f:
-        for line in f:
-            if line.strip() != f'{blockchain}:{wallet_address}':
-                temp_f.write(line)
-    os.replace(temp_file_path, file_path)
-    logging.info(f'Removed {wallet_address} from the list of watched {blockchain.upper()} wallets.')
-
-# Define the command handlers for the Telegram bot
 def start(update, context):
-    message = """
-👋 Welcome to the Ethereum and Binance Wallet Monitoring Bot!
-
-Use /add <blockchain> <wallet_address> to add a new wallet to monitor.
-
-Example: /add ETH 0x123456789abcdef
-
-Use /remove <blockchain> <wallet_address> to stop monitoring a wallet.
-
-Example: /remove ETH 0x123456789abcdef
-
-Use /list <blockchain> to list all wallets being monitored for a specific blockchain.
-
-Example: /list ETH or just /list
-
-Don't forget to star my Github repo if you find this bot useful! https://github.com/cankatx/crypto-wallet-tracker ⭐️
-    """
+    """Send a message when the command /start is issued."""
+    message = "Bienvenue ! Je suis un bot qui suit les transactions des portefeuilles ETH et BNB.\n\n"
+    message += "Commandes disponibles :\n"
+    message += "/add <blockchain> <wallet_address> - Ajoute un portefeuille à suivre\n"
+    message += "/remove <blockchain> <wallet_address> - Supprime un portefeuille\n"
+    message += "/list - Liste les portefeuilles suivis"
     context.bot.send_message(chat_id=update.message.chat_id, text=message)
-    logging.info('Sent welcome message to user.')
 
 def add(update, context):
-    if len(context.args) < 2:
-        context.bot.send_message(chat_id=update.message.chat_id, text="Please provide a blockchain and wallet address to add.")
-        logging.warning('User did not provide enough arguments to add a wallet.')
+    """Add a wallet to the watch list."""
+    if len(context.args) != 2:
+        message = "Format incorrect. Utilisez : /add <blockchain> <wallet_address>"
+        context.bot.send_message(chat_id=update.message.chat_id, text=message)
         return
 
     blockchain = context.args[0].lower()
     wallet_address = context.args[1]
 
-    # Check if the wallet address is in the correct format for the specified blockchain
-    if blockchain == 'eth':
-        if not re.match(r'^0x[a-fA-F0-9]{40}$', wallet_address):
-            context.bot.send_message(chat_id=update.message.chat_id, text=f"{wallet_address} is not a valid Ethereum wallet address.")
-            logging.warning(f"Invalid Ethereum wallet address: {wallet_address}")
-            return
-    elif blockchain == 'bnb':
-        if not re.match(r'^0x[a-fA-F0-9]{40}$', wallet_address):
-            context.bot.send_message(chat_id=update.message.chat_id, text=f"{wallet_address} is not a valid Binance Smart Chain wallet address.")
-            logging.warning(f"Invalid Binance wallet address: {wallet_address}")
-            return
-    else:
-        context.bot.send_message(chat_id=update.message.chat_id, text=f"Invalid blockchain specified: {blockchain}")
-        logging.warning(f"Invalid blockchain specified: {blockchain}")
+    if blockchain not in ['eth', 'bnb']:
+        message = "Blockchain non valide. Utilisez 'eth' ou 'bnb'."
+        context.bot.send_message(chat_id=update.message.chat_id, text=message)
         return
-    
-    add_wallet(wallet_address, blockchain)
-    message = f'Added {wallet_address} to the list of watched {blockchain.upper()} wallets.'
+
+    # Check wallet address format
+    if not re.match(r'^0x[a-fA-F0-9]{40}$', wallet_address):
+        message = "Format d'adresse de portefeuille non valide."
+        context.bot.send_message(chat_id=update.message.chat_id, text=message)
+        return
+
+    # Add the wallet to the watch list
+    with open("watched_wallets.txt", "a") as f:
+        f.write(f"{blockchain}:{wallet_address}\n")
+
+    message = f"Portefeuille {wallet_address} ajouté à la liste de surveillance pour {blockchain.upper()}."
     context.bot.send_message(chat_id=update.message.chat_id, text=message)
 
 def remove(update, context):
-    if len(context.args) < 2:
-        context.bot.send_message(chat_id=update.message.chat_id, text="Please provide a blockchain and wallet address to remove.\nUsage: /remove ETH 0x123456789abcdef")
-        logging.warning('User did not provide enough arguments to remove a wallet.')
+    """Remove a wallet from the watch list."""
+    if len(context.args) != 2:
+        message = "Format incorrect. Utilisez : /remove <blockchain> <wallet_address>"
+        context.bot.send_message(chat_id=update.message.chat_id, text=message)
         return
+
     blockchain = context.args[0].lower()
     wallet_address = context.args[1]
-    remove_wallet(wallet_address, blockchain)
-    message = f'Removed {wallet_address} from the list of watched {blockchain.upper()} wallets.'
+
+    if blockchain not in ['eth', 'bnb']:
+        message = "Blockchain non valide. Utilisez 'eth' ou 'bnb'."
+        context.bot.send_message(chat_id=update.message.chat_id, text=message)
+        return
+
+    # Remove the wallet from the watch list
+    wallets = []
+    with open("watched_wallets.txt", "r") as f:
+        wallets = [line.strip() for line in f if line.strip()]
+
+    wallet_entry = f"{blockchain}:{wallet_address}"
+    if wallet_entry in wallets:
+        wallets.remove(wallet_entry)
+        with open("watched_wallets.txt", "w") as f:
+            for wallet in wallets:
+                f.write(f"{wallet}\n")
+        message = f"Portefeuille {wallet_address} supprimé de la liste de surveillance pour {blockchain.upper()}."
+    else:
+        message = f"Portefeuille {wallet_address} non trouvé dans la liste de surveillance pour {blockchain.upper()}."
+
     context.bot.send_message(chat_id=update.message.chat_id, text=message)
 
 def list_wallets(update, context):
-    with open("watched_wallets.txt", "r") as f:
-        wallets = [line.strip() for line in f.readlines()]
-    if wallets:
+    """List all watched wallets."""
+    if os.path.exists("watched_wallets.txt"):
         eth_wallets = []
         bnb_wallets = []
-        for wallet in wallets:
-            blockchain, wallet_address = wallet.split(':')
-            if blockchain == 'eth':
-                eth_wallets.append(wallet_address)
-            elif blockchain == 'bnb':
-                bnb_wallets.append(wallet_address)
+        
+        with open("watched_wallets.txt", "r") as f:
+            for line in f:
+                blockchain, wallet_address = line.strip().split(":")
+                if blockchain == 'eth':
+                    eth_wallets.append(wallet_address)
+                elif blockchain == 'bnb':
+                    bnb_wallets.append(wallet_address)
 
         message = "The following wallets are currently being monitored\n"
         message += "\n"
@@ -234,8 +217,6 @@ def list_wallets(update, context):
         context.bot.send_message(chat_id=update.message.chat_id, text=message)
 
 # Set up the Telegram bot
-from telegram.ext import Updater, CommandHandler
-
 updater = Updater(token=TELEGRAM_BOT_TOKEN, use_context=True)
 dispatcher = updater.dispatcher
 
@@ -251,8 +232,14 @@ dispatcher.add_handler(add_handler)
 dispatcher.add_handler(remove_handler)
 dispatcher.add_handler(list_handler)
 
+# Start the bot
 updater.start_polling()
 logging.info("Telegram bot started.")
 
-logging.info("Monitoring wallets...")
-monitor_wallets()
+try:
+    # Run the bot until you press Ctrl-C
+    logging.info("Monitoring wallets...")
+    monitor_wallets()
+except KeyboardInterrupt:
+    updater.stop()
+    logging.info("Bot stopped manually")
